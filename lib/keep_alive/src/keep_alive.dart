@@ -32,7 +32,7 @@ class PlatformKeepAlive implements KeepAlive {
     TargetPlatform? platform,
   }) : _platform = platform;
 
-  static const channelName = 'xyz.bringin.radius/keep_alive';
+  static const channelName = 'cash.radius/keep_alive';
 
   final MethodChannel channel;
   final TargetPlatform? _platform;

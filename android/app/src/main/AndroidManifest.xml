@@ -1,6 +1,40 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 12 and up. neverForLocation lets us skip the location
+         permission: we scan to find mesh peers, never to work out where the
+         user is. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Android 11 and below need these for BLE. -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <!-- Location is for one GPS fix when a bounty is posted, so its listing
+         on the internet carries a coarse geohash. Never for BLE scanning:
+         BLUETOOTH_SCAN above says neverForLocation. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Relays are the only internet use, and only when the radio cannot reach. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The radio keeps listening in the background inside a foreground
+         service, which is the only way Android lets a BLE scan run unthrottled
+         once the screen is off. Android 13 needs permission to show the
+         notification that comes with it. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature android:name="android.hardware.bluetooth_le"
+        android:required="true" />
+
     <application
-        android:label="radius"
+        android:label="Radius"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -27,6 +61,10 @@
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <service
+            android:name=".MeshService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

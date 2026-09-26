@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown by Android, not Flutter, so it lives here rather than in l10n. -->
+    <string name="mesh_channel_name">Nearby radio</string>
+    <string name="mesh_channel_description">Shown while Radius listens for nearby bounties.</string>
+    <string name="mesh_notification_title">Radius is listening</string>
+    <string name="mesh_notification_text">Nearby bounties and claims keep arriving while the app is in the background.</string>
+</resources>

@@ -66,5 +66,16 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Finds nearby phones so bounties can be shared directly, with no server and no internet.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Takes one position fix when you post a bounty, so people further away can find it by area. Only a coarse grid cell is shared.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Lets nearby phones find this one so bounties can be shared directly.</string>
 </dict>
 </plist>
