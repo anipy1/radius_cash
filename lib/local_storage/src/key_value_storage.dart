@@ -5,6 +5,7 @@ import 'models/bounty_cm.dart';
 import 'models/claim_cm.dart';
 import 'models/hive_adapters.dart';
 import 'models/hive_registrar.g.dart';
+import 'models/witness_cm.dart';
 
 /// The one place that opens Hive boxes.
 ///
@@ -20,6 +21,7 @@ class KeyValueStorage {
 
   static const _bountiesBoxKey = 'bounties';
   static const _claimsBoxKey = 'claims';
+  static const _witnessesBoxKey = 'witnesses';
   static const _settingsBoxKey = 'settings';
 
   final HiveInterface _hive;
@@ -39,6 +41,8 @@ class KeyValueStorage {
   Future<Box<BountyCM>> get bountiesBox => _open(_bountiesBoxKey);
 
   Future<Box<ClaimCM>> get claimsBox => _open(_claimsBoxKey);
+
+  Future<Box<WitnessCM>> get witnessesBox => _open(_witnessesBoxKey);
 
   /// Small user preferences by name: whether onboarding was seen, and the
   /// like. Not a cache, so clearCaches leaves it alone.
@@ -66,6 +70,7 @@ class KeyValueStorage {
   Future<void> clearCaches() async {
     await (await bountiesBox).clear();
     await (await claimsBox).clear();
+    await (await witnessesBox).clear();
   }
 
   Future<void> close() async {

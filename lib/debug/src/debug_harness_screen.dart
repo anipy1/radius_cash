@@ -44,11 +44,13 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
   StreamSubscription<LogLine>? _logs;
   StreamSubscription<List<Bounty>>? _bounties;
   StreamSubscription<List<Claim>>? _claims;
+  StreamSubscription<List<Witness>>? _witnesses;
   StreamSubscription<BountyCacheException>? _cacheFailures;
 
   Identity? _identity;
   var _bountyList = <Bounty>[];
   var _claimList = <Claim>[];
+  var _witnessList = <Witness>[];
   var _posted = 0;
 
   @override
@@ -65,6 +67,10 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
     _claims = widget.bountyRepository.getClaims().listen(
       (c) => setState(() => _claimList = c),
       onError: (Object e) => _say('claims stream: ${_why(e)}'),
+    );
+    _witnesses = widget.bountyRepository.getWitnesses().listen(
+      (w) => setState(() => _witnessList = w),
+      onError: (Object e) => _say('witnesses stream: ${_why(e)}'),
     );
     _cacheFailures = widget.bountyRepository.cacheFailures.listen(
       (e) => _say('cache: ${_why(e)}'),
@@ -185,9 +191,7 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
   Future<void> _markDone() {
     final mine = _bountyList
         .where((b) => b.status == BountyStatus.claimed)
-        .where(
-          (b) => b.isMine || b.claimantId == _identity?.peerId,
-        )
+        .where((b) => b.isMine || b.claimantId == _identity?.peerId)
         .firstOrNull;
     if (mine == null) return _nothing('nothing claimed to finish');
     return _run('done ${mine.title}', () async {
@@ -195,14 +199,28 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
     });
   }
 
-  Future<void> _nothing(String why) async =>
-      _say(why, level: LogLevel.warn);
+  /// Asks the room again to co-sign a completion this phone claimed.
+  /// markDone already asks once; this is for the third phone that walked in
+  /// afterwards.
+  Future<void> _witness() {
+    final mine = _bountyList
+        .where((b) => b.claimantId == _identity?.peerId)
+        .firstOrNull;
+    if (mine == null) return _nothing('nothing of mine to be witnessed');
+    return _run(
+      'witness ${mine.title}',
+      () => widget.bountyRepository.requestWitnesses(mine.id),
+    );
+  }
+
+  Future<void> _nothing(String why) async => _say(why, level: LogLevel.warn);
 
   @override
   void dispose() {
     unawaited(_logs?.cancel());
     unawaited(_bounties?.cancel());
     unawaited(_claims?.cancel());
+    unawaited(_witnesses?.cancel());
     unawaited(_cacheFailures?.cancel());
     _scroll.dispose();
     super.dispose();
@@ -250,9 +268,8 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
         ),
         StreamBuilder<RelayStatus>(
           stream: widget.meshRepository.getRelayStatus(),
-          builder: (context, snapshot) => Text(
-            'relays ${(snapshot.data ?? RelayStatus.stopped).name}',
-          ),
+          builder: (context, snapshot) =>
+              Text('relays ${(snapshot.data ?? RelayStatus.stopped).name}'),
         ),
         StreamBuilder<List<Peer>>(
           stream: widget.meshRepository.getPeers(),
@@ -260,7 +277,14 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
             'reachable ${(snapshot.data ?? const <Peer>[]).map((p) => p.label).join(' ')}',
           ),
         ),
-        Text('bounties ${_bountyList.length}  claims ${_claimList.length}'),
+        Text(
+          'bounties ${_bountyList.length}  claims ${_claimList.length}  '
+          'witnesses ${_witnessList.length}',
+        ),
+        if (_witnessList.isNotEmpty)
+          Text(
+            'witnessed by ${_witnessList.map((w) => w.witnessLabel).join(' ')}',
+          ),
       ],
     ),
   );
@@ -274,6 +298,7 @@ class _DebugHarnessScreenState extends State<DebugHarnessScreen> {
         TextButton(onPressed: _claim, child: const Text('claim')),
         TextButton(onPressed: _accept, child: const Text('accept')),
         TextButton(onPressed: _markDone, child: const Text('done')),
+        TextButton(onPressed: _witness, child: const Text('witness')),
         TextButton(
           onPressed: () => _run('stop mesh', widget.meshRepository.stop),
           child: const Text('stop'),

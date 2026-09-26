@@ -66,10 +66,40 @@ void main() {
     );
   });
 
-  test('clearCaches empties both', () async {
+  test('clearCaches empties all three', () async {
     await (await storage.bountiesBox).put('x', bounty('x'));
+    await (await storage.witnessesBox).put(
+      'x:y',
+      WitnessCM(
+        bountyId: 'x',
+        claimantPeerId: 'y',
+        witnessPeerId: 'z',
+        record: Uint8List.fromList([1, 2, 3]),
+        at: 1,
+      ),
+    );
     await storage.clearCaches();
     expect((await storage.bountiesBox).isEmpty, isTrue);
     expect((await storage.claimsBox).isEmpty, isTrue);
+    expect((await storage.witnessesBox).isEmpty, isTrue);
+  });
+
+  test('a witness round trips, signed bytes included', () async {
+    final record = Uint8List.fromList(List.generate(157, (i) => i % 256));
+    final witness = WitnessCM(
+      bountyId: 'b',
+      claimantPeerId: 'c',
+      witnessPeerId: 'w',
+      record: record,
+      at: 1790000000,
+      mine: true,
+    );
+    await (await storage.witnessesBox).put(witness.key, witness);
+
+    final read = (await storage.witnessesBox).get('b:w')!;
+    expect(read.record, record);
+    expect(read.mine, isTrue);
+    expect(read.at, 1790000000);
+    expect(read.claimantPeerId, 'c');
   });
 }

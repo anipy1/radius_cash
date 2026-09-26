@@ -86,6 +86,7 @@ class BountyRepository {
 
   final _bounties = BehaviorSubject<List<Bounty>>.seeded(const []);
   final _claims = BehaviorSubject<List<Claim>>.seeded(const []);
+  final _witnesses = BehaviorSubject<List<Witness>>.seeded(const []);
   final _cacheFailures = PublishSubject<BountyCacheException>();
 
   final List<StreamSubscription<Object?>> _subs = [];
@@ -104,6 +105,11 @@ class BountyRepository {
   /// Claims on my bounties, and my claims on other people's.
   Stream<List<Claim>> getClaims() =>
       _claims.stream.distinct(const ListEquality<Claim>().equals);
+
+  /// Everyone who co-signed a completion they heard on the radio. Newest
+  /// first. Standalone records, not a field on the bounty.
+  Stream<List<Witness>> getWitnesses() =>
+      _witnesses.stream.distinct(const ListEquality<Witness>().equals);
 
   /// Follows listings on the internet around [area], so bounties posted
   /// further than a radio can reach still show, marked as such. Coarsened
@@ -135,6 +141,16 @@ class BountyRepository {
     _subs.add(
       link.bountyMessages
           .asyncMap((m) => _guarded(() => _onMessage(link, m)))
+          .listen(null),
+    );
+    _subs.add(
+      link.witnessRequests
+          .asyncMap((r) => _guarded(() => _onWitnessRequest(link, r)))
+          .listen(null),
+    );
+    _subs.add(
+      link.witnessRecords
+          .asyncMap((w) => _guarded(() => _onWitness(link, w)))
           .listen(null),
     );
     // The link has no peers stream, only getters, and nothing about a peer
@@ -320,9 +336,15 @@ class BountyRepository {
       }
     }
     domainClaims.sort((a, b) => b.sentAt.compareTo(a.sentAt));
+    final witnesses = [
+      for (final cm in await _storage.getWitnesses())
+        cm.toDomainModel(myPeerId: me),
+    ];
+    witnesses.sort((a, b) => b.at.compareTo(a.at));
     if (_bounties.isClosed) return;
     _bounties.add(bounties);
     _claims.add(domainClaims);
+    if (!_witnesses.isClosed) _witnesses.add(witnesses);
   }
 
   // --------------------------------------------------------------- inbound
@@ -705,8 +727,32 @@ class BountyRepository {
         _reply(BountyMessageRM.kindDone, bountyId),
       );
       await _storage.upsertClaim(_withStatus(mine, ClaimCM.statusDone));
+      // Ask the room to co-sign it. Swallowed on purpose: the completion has
+      // already gone to the poster and is recorded here, and a radio that
+      // would not take one more frame must not undo either of those.
+      try {
+        await link.requestWitnesses(bountyId, me);
+      } catch (_) {
+        link.note('witness request for ${bountyId.substring(0, 6)} not sent');
+      }
     }
     await _emit(link);
+  }
+
+  /// Asks again for witnesses to a completion this device claimed.
+  ///
+  /// [markDone] already does this once. A second ask costs one frame and
+  /// catches the phones that were not in the room the first time.
+  Future<void> requestWitnesses(String bountyId) async {
+    final link = await _running();
+    final me = link.identity.peerId;
+    final cm = await _bountyOrThrow(bountyId);
+    if (cm.claimantPeerId != me) throw NotBountyClaimantException();
+    try {
+      await link.requestWitnesses(bountyId, me);
+    } catch (_) {
+      throw BountySendException();
+    }
   }
 
   /// The author says the money changed hands.
@@ -879,6 +925,94 @@ class BountyRepository {
     if (rm != null) _board?.publish(rm).ignore();
   }
 
+  /// Somebody in radio range says they finished a bounty. Decide whether to
+  /// put our name to it.
+  ///
+  /// That the request came over the radio is not checked here and cannot be:
+  /// MeshLink drops internet-borne requests before this stream, which is the
+  /// whole of the rule. Everything below is about whether we are a witness
+  /// worth having.
+  Future<void> _onWitnessRequest(MeshLink link, WitnessRequest request) async {
+    final me = link.identity.peerId;
+    // Nobody vouches for themselves.
+    if (request.claimantPeerId == me) return;
+    // Only a phone that already holds the record can say what it is
+    // witnessing. Without it we would be signing a bounty id and nothing more.
+    final bounty = await _storage.getBounty(request.bountyId);
+    if (bounty == null) return;
+    // The poster is not an independent witness to their own bounty.
+    if (bounty.authorPeerId == me) return;
+    // A request naming somebody the author never accepted is noise.
+    if (bounty.claimantPeerId != null &&
+        bounty.claimantPeerId != request.claimantPeerId) {
+      return;
+    }
+    // At most once per bounty, whatever happens below.
+    if (await _storage.getWitness(request.bountyId, me) != null) return;
+
+    final identity = link.identity;
+    final rm = await WitnessRM.sign(
+      bountyId: request.bountyId,
+      claimantPeerId: request.claimantPeerId,
+      witnessPeerId: me,
+      signingKeyPair: identity.signingKeyPair,
+      signingPublicKey: identity.signingPublicKey,
+      noisePublicKey: identity.noisePublicKey,
+      at: _now().millisecondsSinceEpoch ~/ 1000,
+    );
+    final bytes = rm.encode();
+    // Stored before it is sent, on purpose. A radio that refuses the record
+    // must not leave us free to sign a second one for the same bounty.
+    await _storage.upsertWitness(rm.toCacheModel(record: bytes, mine: true));
+    await _emit(link);
+    try {
+      await link.sendWitness(bounty.authorPeerId, bytes);
+    } catch (_) {
+      // The poster is out of reach. The outbox holds sealed messages for a
+      // peer that comes back, and a witness nobody collected is not an error
+      // anybody can act on.
+      link.note('witness for ${request.bountyId.substring(0, 6)} not sent');
+    }
+  }
+
+  /// A signed witness arrived, sealed, from somebody who heard a completion.
+  ///
+  /// Every refusal below is silent: these records come off the radio from
+  /// anyone at all, and a bad one is not news, it is Tuesday.
+  Future<void> _onWitness(
+    MeshLink link,
+    ({String from, Uint8List body}) message,
+  ) async {
+    final rm = WitnessRM.decode(message.body);
+    if (rm == null) return;
+    // Signature, and the peer id against the noise key it claims.
+    if (!await rm.verify()) {
+      link.note('witness for ${rm.bountyId.substring(0, 6)} failed to verify');
+      return;
+    }
+    // The record says who signed it; the session says who sent it. A record
+    // relayed by somebody other than its signer is not evidence of anything.
+    if (rm.witnessPeerId != message.from) return;
+    final bounty = await _storage.getBounty(rm.bountyId);
+    if (bounty == null) return;
+    // Only the poster collects. Anyone else holding these has no use for them
+    // and no way to know the set is complete.
+    if (bounty.authorPeerId != link.identity.peerId) return;
+    // Neither party to the bounty is a witness to it.
+    if (rm.witnessPeerId == bounty.authorPeerId) return;
+    if (rm.witnessPeerId == rm.claimantPeerId) return;
+    if (bounty.claimantPeerId != null &&
+        rm.claimantPeerId != bounty.claimantPeerId) {
+      return;
+    }
+    // One witness, one signature, however many times it arrives.
+    if (await _storage.getWitness(rm.bountyId, rm.witnessPeerId) != null) {
+      return;
+    }
+    await _storage.upsertWitness(rm.toCacheModel(record: message.body));
+    await _emit(link);
+  }
+
   Future<void> _send(MeshLink link, String peer, BountyMessageRM rm) async {
     try {
       await link.sendBountyMessage(peer, rm.encode());
@@ -971,6 +1105,7 @@ class BountyRepository {
     await _board?.close();
     await _bounties.close();
     await _claims.close();
+    await _witnesses.close();
     await _cacheFailures.close();
   }
 }

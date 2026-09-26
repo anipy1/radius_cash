@@ -62,3 +62,14 @@ extension ClaimCMToDomain on ClaimCM {
     delivered: receivedAt != null,
   );
 }
+
+extension WitnessCMToDomain on WitnessCM {
+  Witness toDomainModel({required String myPeerId}) => Witness(
+    bountyId: bountyId,
+    witnessId: witnessPeerId,
+    witnessLabel: MeshLink.labelOf(witnessPeerId),
+    claimantId: claimantPeerId,
+    at: _fromUnix(at),
+    isMine: witnessPeerId == myPeerId,
+  );
+}

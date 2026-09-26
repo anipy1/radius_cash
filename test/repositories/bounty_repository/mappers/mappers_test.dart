@@ -97,5 +97,39 @@ void main() {
       expect(cm.toDomainModel(myPeerId: other).isMine, isFalse);
       expect(cm.toDomainModel(myPeerId: me).status, ClaimStatus.accepted);
     });
+
+    test('a witness keeps its signed bytes and knows whose it is', () async {
+      final identity = await NodeIdentity.fromSeed(
+        Uint8List.fromList(List.filled(32, 4)),
+      );
+      final rm = await WitnessRM.sign(
+        bountyId: '0123456789abcdef',
+        claimantPeerId: other,
+        witnessPeerId: identity.peerId,
+        signingKeyPair: identity.signingKeyPair,
+        signingPublicKey: identity.signingPublicKey,
+        noisePublicKey: identity.noisePublicKey,
+        at: 1790000000,
+      );
+      final bytes = rm.encode();
+      final cm = rm.toCacheModel(record: bytes, mine: true);
+
+      // The exact bytes, or the signature stops verifying for whoever we
+      // forward it to.
+      expect(cm.record, bytes);
+      expect(cm.mine, isTrue);
+      expect(cm.key, '0123456789abcdef:${identity.peerId}');
+
+      final domain = cm.toDomainModel(myPeerId: identity.peerId);
+      expect(domain.isMine, isTrue);
+      expect(domain.witnessId, identity.peerId);
+      expect(domain.claimantId, other);
+      expect(domain.witnessLabel, MeshLink.labelOf(identity.peerId));
+      expect(
+        domain.at,
+        DateTime.fromMillisecondsSinceEpoch(1790000000 * 1000, isUtc: true),
+      );
+      expect(cm.toDomainModel(myPeerId: me).isMine, isFalse);
+    });
   });
 }

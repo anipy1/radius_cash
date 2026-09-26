@@ -40,6 +40,20 @@ class BountyLocalStorage {
     ),
   );
 
+  Future<List<WitnessCM>> getWitnesses() =>
+      _guard(() async => (await keyValueStorage.witnessesBox).values.toList());
+
+  Future<WitnessCM?> getWitness(String bountyId, String witnessPeerId) =>
+      _guard(
+        () async => (await keyValueStorage.witnessesBox).get(
+          WitnessCM.keyFor(bountyId, witnessPeerId),
+        ),
+      );
+
+  Future<void> upsertWitness(WitnessCM witness) => _guard(
+    () async => (await keyValueStorage.witnessesBox).put(witness.key, witness),
+  );
+
   Future<void> clear() => _guard(keyValueStorage.clearCaches);
 
   Future<T> _guard<T>(Future<T> Function() op) async {

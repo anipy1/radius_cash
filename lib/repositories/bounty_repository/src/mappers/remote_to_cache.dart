@@ -37,3 +37,17 @@ extension BountyMessageRMToCache on BountyMessageRM {
     status: ClaimCM.statusPending,
   );
 }
+
+extension WitnessRMToCache on WitnessRM {
+  /// [record] is the exact signed bytes, kept so the witness can be
+  /// forwarded or re-verified by anyone later.
+  WitnessCM toCacheModel({required Uint8List record, bool mine = false}) =>
+      WitnessCM(
+        bountyId: bountyId,
+        claimantPeerId: claimantPeerId,
+        witnessPeerId: witnessPeerId,
+        record: record,
+        at: at,
+        mine: mine,
+      );
+}

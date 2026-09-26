@@ -322,6 +322,9 @@ class MeshLink {
   final _bountyRecords = StreamController<Uint8List>.broadcast();
   final _bountyMessages =
       StreamController<({String from, Uint8List body})>.broadcast();
+  final _witnessRequests = StreamController<WitnessRequest>.broadcast();
+  final _witnessRecords =
+      StreamController<({String from, Uint8List body})>.broadcast();
   final List<StreamSubscription> _subs = [];
 
   bool _running = false;
@@ -338,6 +341,18 @@ class MeshLink {
   /// the session proved they came from.
   Stream<({String from, Uint8List body})> get bountyMessages =>
       _bountyMessages.stream;
+
+  /// Requests to witness a completion.
+  ///
+  /// Only ever frames that arrived over the radio. A request that came in off
+  /// a relay is dropped before it reaches here and is not even forwarded, so
+  /// a listener does not have to check and cannot forget to.
+  Stream<WitnessRequest> get witnessRequests => _witnessRequests.stream;
+
+  /// Witness records that opened under a session, with the peer id the
+  /// session proved they came from.
+  Stream<({String from, Uint8List body})> get witnessRecords =>
+      _witnessRecords.stream;
   bool get running => _running;
   BluetoothLowEnergyState get state => _central.state;
 
@@ -862,6 +877,29 @@ class MeshLink {
   Future<void> sendBountyMessage(String peer, Uint8List body) =>
       _sendSealedPayload(peer, SealedPayload.encodeBounty(body), 'bounty msg');
 
+  /// Asks the room to co-sign that [claimantPeerId] finished [bountyId].
+  ///
+  /// Flooded in the clear. Whoever is close enough to hear it is exactly the
+  /// set of phones entitled to answer.
+  Future<void> requestWitnesses(String bountyId, String claimantPeerId) =>
+      _flood(
+        Frame.witnessRequest(
+          bountyId: bountyId,
+          claimantPeerId: claimantPeerId,
+        ),
+        'witness req',
+      );
+
+  /// Sends a signed witness record to the poster, sealed.
+  ///
+  /// The *answer* may travel over the internet, unlike the request. The rule
+  /// is about where the completion was heard, and that was already settled by
+  /// the time this record exists; how the evidence gets home does not change
+  /// what it says. A record is 157 bytes plus its kind byte, over the 131
+  /// byte sealed budget, so this goes out as two fragments.
+  Future<void> sendWitness(String peer, Uint8List record) =>
+      _sendSealedPayload(peer, SealedPayload.encodeWitness(record), 'witness');
+
   /// Seals [text] for [peer] and floods it.
   ///
   /// The mesh carries it like any other frame and every relay forwards bytes it
@@ -1289,6 +1327,20 @@ class MeshLink {
       'recv ${frame.shortId} ${bytes.length}B via $via from $peer',
     );
 
+    // The radio-only rule, and the reason it sits above the relay rather than
+    // in the type branch below. A witness request that came off a relay must
+    // not be forwarded either: our neighbours would hear it from us on the
+    // radio and it would look to them exactly like the real thing. Dropping
+    // it here is what stops the internet laundering itself into proximity.
+    if (fromInternet && frame.isWitness) {
+      _log(
+        LogLevel.warn,
+        'witness request ${frame.shortId} arrived over nostr '
+        '-- dropped, not relayed',
+      );
+      return;
+    }
+
     // Forward before rendering, and regardless of whether we can read it.
     _scheduleRelay(bytes, key, frame);
 
@@ -1358,6 +1410,11 @@ class MeshLink {
       return;
     }
 
+    if (frame.isWitness) {
+      _acceptWitnessRequest(frame, fromInternet: fromInternet);
+      return;
+    }
+
     // Relay-but-do-not-render. A node that cannot interpret a payload must
     // still forward it, but it must not show it to the user -- displaying an
     // opaque blob as if it were a message is how a stale build turns another
@@ -1380,6 +1437,27 @@ class MeshLink {
   void _acceptBounty(Frame frame) {
     _log(LogLevel.rx, 'bounty ${frame.shortId}, ${frame.body.length}B');
     if (!_bountyRecords.isClosed) _bountyRecords.add(frame.body);
+  }
+
+  /// Hands a witness request up, if it is one we are allowed to honour.
+  ///
+  /// [WitnessRequest.parse] is what enforces the radio-only rule; the check
+  /// above means it should never see an internet frame, and it is passed the
+  /// flag anyway so the rule holds at the parse site too.
+  void _acceptWitnessRequest(Frame frame, {required bool fromInternet}) {
+    final request = WitnessRequest.parse(frame, fromInternet: fromInternet);
+    if (request == null) {
+      _log(LogLevel.warn, 'malformed witness request -- dropped');
+      return;
+    }
+    // Nobody witnesses their own completion.
+    if (request.claimantPeerId == identity.peerId) return;
+    _log(
+      LogLevel.rx,
+      'witness request from ${request.claimantLabel} '
+      'for ${request.bountyId.substring(0, 6)}',
+    );
+    if (!_witnessRequests.isClosed) _witnessRequests.add(request);
   }
 
   // ------------------------------------------------------------- reassembly
@@ -1449,6 +1527,17 @@ class MeshLink {
 
     if (rebuilt.isBounty) {
       _acceptBounty(rebuilt);
+      return;
+    }
+    if (rebuilt.isWitness) {
+      // A request is 31 bytes and is never fragmented, so this is either a
+      // stale build or someone trying to smuggle one past the check above:
+      // the assembler does not carry which pipe the pieces came in on, so a
+      // rebuilt request has no provenance left to trust.
+      _log(
+        LogLevel.warn,
+        'witness request arrived fragmented -- dropped, no provenance',
+      );
       return;
     }
     if (!rebuilt.isReadableText) {
@@ -1629,6 +1718,17 @@ class MeshLink {
         );
         if (!_bountyMessages.isClosed) {
           _bountyMessages.add((from: envelope.src, body: payload.body));
+        }
+        return;
+      }
+
+      if (payload.kind == SealedKind.witness) {
+        _log(
+          LogLevel.rx,
+          'witness from ${envelope.srcLabel}, ${payload.body.length}B',
+        );
+        if (!_witnessRecords.isClosed) {
+          _witnessRecords.add((from: envelope.src, body: payload.body));
         }
         return;
       }
@@ -2396,6 +2496,8 @@ class MeshLink {
     await _messages.close();
     await _bountyRecords.close();
     await _bountyMessages.close();
+    await _witnessRequests.close();
+    await _witnessRecords.close();
   }
 }
 

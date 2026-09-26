@@ -27,7 +27,12 @@ enum SealedKind {
 
   /// A private bounty message: a claim, an accept, a decline, a done. The body
   /// is a BountyMessageRM; the session proves who sent it.
-  bounty(3);
+  bounty(3),
+
+  /// A co-signature on a completion somebody heard over the radio. The body
+  /// is a WitnessRM. Sealed rather than flooded because it is evidence for
+  /// the poster, not an announcement.
+  witness(4);
 
   const SealedKind(this.code);
 
@@ -86,6 +91,10 @@ class SealedPayload {
   /// Returns null for anything that is not a payload we understand.
   static Uint8List encodeBounty(List<int> body) => Uint8List(1 + body.length)
     ..[0] = SealedKind.bounty.code
+    ..setRange(1, 1 + body.length, body);
+
+  static Uint8List encodeWitness(List<int> body) => Uint8List(1 + body.length)
+    ..[0] = SealedKind.witness.code
     ..setRange(1, 1 + body.length, body);
 
   static SealedPayload? parse(List<int> plaintext) {

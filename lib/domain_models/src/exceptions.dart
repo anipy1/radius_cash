@@ -20,6 +20,9 @@ class BountyNotFoundException implements Exception {}
 /// Only the author can do that to a bounty.
 class NotBountyAuthorException implements Exception {}
 
+/// Asked to do something only the accepted claimant may do.
+class NotBountyClaimantException implements Exception {}
+
 /// The bounty is no longer open, so the action makes no sense.
 class BountyClosedException implements Exception {}
 

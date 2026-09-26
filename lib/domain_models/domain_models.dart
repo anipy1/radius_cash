@@ -11,3 +11,4 @@ export 'src/mesh_status.dart';
 export 'src/peer.dart';
 export 'src/relay_status.dart';
 export 'src/retirement_outlook.dart';
+export 'src/witness.dart';

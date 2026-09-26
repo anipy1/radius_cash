@@ -11,12 +11,14 @@ library;
 export 'package:bluetooth_low_energy/bluetooth_low_energy.dart'
     show BluetoothLowEnergyState;
 
-export 'src/ble/frame.dart' show Frame, Announce, SealedEnvelope;
+export 'src/ble/frame.dart'
+    show Frame, Announce, SealedEnvelope, WitnessRequest;
 export 'src/ble/mesh_link.dart'
     show MeshLink, InboundMessage, ObservedPeer, LogLevel, LogLine;
 export 'src/ble/sealed_payload.dart' show SealedKind, SealedPayload;
 export 'src/bounty/bounty_message_rm.dart' show BountyMessageRM;
 export 'src/bounty/bounty_rm.dart' show BountyRM;
+export 'src/bounty/witness_rm.dart' show WitnessRM;
 export 'src/identity/identity_store.dart'
     show IdentityStore, IdentitySource, LoadedIdentity, SeedVault;
 export 'src/identity/node_identity.dart' show NodeIdentity;

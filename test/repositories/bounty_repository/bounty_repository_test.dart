@@ -53,6 +53,7 @@ class _MemoryStorage extends BountyLocalStorage {
 
   final bounties = <String, BountyCM>{};
   final claims = <String, ClaimCM>{};
+  final witnesses = <String, WitnessCM>{};
 
   @override
   Future<List<BountyCM>> getBounties() async => bounties.values.toList();
@@ -72,9 +73,18 @@ class _MemoryStorage extends BountyLocalStorage {
   Future<void> deleteClaim(String bountyId, String claimantPeerId) async =>
       claims.remove(ClaimCM.keyFor(bountyId, claimantPeerId));
   @override
+  Future<List<WitnessCM>> getWitnesses() async => witnesses.values.toList();
+  @override
+  Future<WitnessCM?> getWitness(String bountyId, String witnessPeerId) async =>
+      witnesses[WitnessCM.keyFor(bountyId, witnessPeerId)];
+  @override
+  Future<void> upsertWitness(WitnessCM witness) async =>
+      witnesses[witness.key] = witness;
+  @override
   Future<void> clear() async {
     bounties.clear();
     claims.clear();
+    witnesses.clear();
   }
 }
 
@@ -97,9 +107,13 @@ void main() {
   late _MemoryStorage storage;
   late StreamController<Uint8List> records;
   late StreamController<({String from, Uint8List body})> messages;
+  late StreamController<WitnessRequest> witnessRequests;
+  late StreamController<({String from, Uint8List body})> witnessRecords;
   late StreamController<LogLine> logs;
   late List<Uint8List> published;
   late List<(String, Uint8List)> sent;
+  late List<(String, Uint8List)> witnessed;
+  late List<(String, String)> witnessAsks;
   late _FakeRelays relays;
 
   setUpAll(() async {
@@ -114,9 +128,13 @@ void main() {
     storage = _MemoryStorage();
     records = StreamController.broadcast();
     messages = StreamController.broadcast();
+    witnessRequests = StreamController.broadcast();
+    witnessRecords = StreamController.broadcast();
     logs = StreamController.broadcast();
     published = [];
     sent = [];
+    witnessed = [];
+    witnessAsks = [];
     relays = _FakeRelays();
     when(() => link.identity).thenReturn(me);
     when(() => link.running).thenReturn(true);
@@ -125,6 +143,8 @@ void main() {
     when(() => link.canReach(any())).thenReturn(false);
     when(() => link.bountyRecords).thenAnswer((_) => records.stream);
     when(() => link.bountyMessages).thenAnswer((_) => messages.stream);
+    when(() => link.witnessRequests).thenAnswer((_) => witnessRequests.stream);
+    when(() => link.witnessRecords).thenAnswer((_) => witnessRecords.stream);
     when(() => link.logs).thenAnswer((_) => logs.stream);
     when(() => link.note(any())).thenReturn(null);
     when(() => link.learnNostrAddress(any(), any())).thenReturn(null);
@@ -135,6 +155,18 @@ void main() {
       sent.add((
         i.positionalArguments[0] as String,
         i.positionalArguments[1] as Uint8List,
+      ));
+    });
+    when(() => link.sendWitness(any(), any())).thenAnswer((i) async {
+      witnessed.add((
+        i.positionalArguments[0] as String,
+        i.positionalArguments[1] as Uint8List,
+      ));
+    });
+    when(() => link.requestWitnesses(any(), any())).thenAnswer((i) async {
+      witnessAsks.add((
+        i.positionalArguments[0] as String,
+        i.positionalArguments[1] as String,
       ));
     });
   });
@@ -1153,6 +1185,527 @@ void main() {
         expect(list.single.viaInternet, isFalse);
       },
     );
+  });
+
+  group('witnesses', () {
+    const id = '0123456789abcdef';
+
+    /// A witness record signed by [by], for a completion by [claimantOf].
+    Future<WitnessRM> witnessBy(
+      NodeIdentity by, {
+      required NodeIdentity claimantOf,
+      String bountyId = id,
+    }) => WitnessRM.sign(
+      bountyId: bountyId,
+      claimantPeerId: claimantOf.peerId,
+      witnessPeerId: by.peerId,
+      signingKeyPair: by.signingKeyPair,
+      signingPublicKey: by.signingPublicKey,
+      noisePublicKey: by.noisePublicKey,
+      at: nowSeconds,
+    );
+
+    group('signing one', () {
+      test('a heard request for a bounty we hold is signed and sent', () async {
+        final repo = build();
+        await settle();
+        // Posted by other, being finished by third, witnessed by me.
+        records.add(
+          (await recordBy(
+            other,
+            status: BountyRM.statusClaimed,
+            claimant: third.peerId,
+          )).encode(),
+        );
+        await settle();
+
+        witnessRequests.add(
+          WitnessRequest(bountyId: id, claimantPeerId: third.peerId),
+        );
+        await settle();
+
+        expect(witnessed, hasLength(1));
+        expect(witnessed.single.$1, other.peerId, reason: 'goes to the poster');
+        final rm = WitnessRM.decode(witnessed.single.$2)!;
+        expect(await rm.verify(), isTrue);
+        expect(rm.witnessPeerId, me.peerId);
+        expect(rm.claimantPeerId, third.peerId);
+        expect(rm.bountyId, id);
+        final list = await repo.getWitnesses().first;
+        expect(list.single.isMine, isTrue);
+        expect(list.single.witnessId, me.peerId);
+      });
+
+      test('a request for a bounty we do not hold is ignored', () async {
+        build();
+        await settle();
+        witnessRequests.add(
+          WitnessRequest(bountyId: id, claimantPeerId: third.peerId),
+        );
+        await settle();
+        expect(witnessed, isEmpty);
+      });
+
+      test('the poster does not witness its own bounty', () async {
+        final repo = build();
+        await settle();
+        final bounty = await repo.postBounty(
+          title: 'mine',
+          details: '',
+          amountCents: 100,
+          expiresAt: now.add(const Duration(hours: 1)),
+        );
+        witnessRequests.add(
+          WitnessRequest(bountyId: bounty.id, claimantPeerId: third.peerId),
+        );
+        await settle();
+        expect(witnessed, isEmpty);
+      });
+
+      test('nobody witnesses their own completion', () async {
+        build();
+        await settle();
+        records.add(
+          (await recordBy(
+            other,
+            status: BountyRM.statusClaimed,
+            claimant: me.peerId,
+          )).encode(),
+        );
+        await settle();
+
+        // The claimant is us.
+        witnessRequests.add(
+          WitnessRequest(bountyId: id, claimantPeerId: me.peerId),
+        );
+        await settle();
+        expect(witnessed, isEmpty);
+      });
+
+      test(
+        'a request naming someone who was never accepted is ignored',
+        () async {
+          build();
+          await settle();
+          records.add(
+            (await recordBy(
+              other,
+              status: BountyRM.statusClaimed,
+              claimant: third.peerId,
+            )).encode(),
+          );
+          await settle();
+
+          // The bounty was accepted for third, but the request names other.
+          witnessRequests.add(
+            WitnessRequest(bountyId: id, claimantPeerId: other.peerId),
+          );
+          await settle();
+          expect(witnessed, isEmpty);
+        },
+      );
+
+      test('the same bounty is witnessed at most once', () async {
+        final repo = build();
+        await settle();
+        records.add(
+          (await recordBy(
+            other,
+            status: BountyRM.statusClaimed,
+            claimant: third.peerId,
+          )).encode(),
+        );
+        await settle();
+
+        witnessRequests.add(
+          WitnessRequest(bountyId: id, claimantPeerId: third.peerId),
+        );
+        await settle();
+        witnessRequests.add(
+          WitnessRequest(bountyId: id, claimantPeerId: third.peerId),
+        );
+        await settle();
+
+        expect(witnessed, hasLength(1));
+        expect(await repo.getWitnesses().first, hasLength(1));
+      });
+
+      test(
+        'a radio that refused the record still counts as witnessed',
+        () async {
+          final repo = build();
+          await settle();
+          records.add(
+            (await recordBy(
+              other,
+              status: BountyRM.statusClaimed,
+              claimant: third.peerId,
+            )).encode(),
+          );
+          await settle();
+          when(
+            () => link.sendWitness(any(), any()),
+          ).thenThrow(StateError('gatt'));
+
+          witnessRequests.add(
+            WitnessRequest(bountyId: id, claimantPeerId: third.peerId),
+          );
+          await settle();
+
+          // Stored anyway, so a retry cannot produce a second signature.
+          expect(await repo.getWitnesses().first, hasLength(1));
+        },
+      );
+    });
+
+    group('collecting them', () {
+      /// A bounty posted by me, being finished by other, so that witnesses
+      /// from third are the ones worth having.
+      Future<String> myClaimedBounty(BountyRepository repo) async {
+        final bounty = await repo.postBounty(
+          title: 'mine',
+          details: '',
+          amountCents: 100,
+          expiresAt: now.add(const Duration(hours: 1)),
+        );
+        messages.add((
+          from: other.peerId,
+          body: BountyMessageRM(
+            kind: BountyMessageRM.kindClaim,
+            bountyId: bounty.id,
+            sentAt: nowSeconds,
+            note: '',
+          ).encode(),
+        ));
+        await settle();
+        await repo.accept(bounty.id, other.peerId);
+        await settle();
+        return bounty.id;
+      }
+
+      test('a valid witness from a third party is stored', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await myClaimedBounty(repo);
+
+        final rm = await witnessBy(
+          third,
+          claimantOf: other,
+          bountyId: bountyId,
+        );
+        witnessRecords.add((from: third.peerId, body: rm.encode()));
+        await settle();
+
+        final list = await repo.getWitnesses().first;
+        expect(list, hasLength(1));
+        expect(list.single.witnessId, third.peerId);
+        expect(list.single.claimantId, other.peerId);
+        expect(list.single.isMine, isFalse);
+      });
+
+      test('a bad signature is rejected', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await myClaimedBounty(repo);
+
+        final bytes = (await witnessBy(
+          third,
+          claimantOf: other,
+          bountyId: bountyId,
+        )).encode();
+        bytes[WitnessRM.recordLength - 1] ^= 0xFF;
+        witnessRecords.add((from: third.peerId, body: bytes));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+
+      test(
+        'a record sent by somebody other than its signer is rejected',
+        () async {
+          final repo = build();
+          await settle();
+          final bountyId = await myClaimedBounty(repo);
+
+          // Perfectly valid record, relayed by a peer who did not sign it. The
+          // session proves who sent it, and it is not the witness.
+          final rm = await witnessBy(
+            third,
+            claimantOf: other,
+            bountyId: bountyId,
+          );
+          witnessRecords.add((from: other.peerId, body: rm.encode()));
+          await settle();
+
+          expect(await repo.getWitnesses().first, isEmpty);
+        },
+      );
+
+      test('a witness from the poster is rejected', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await myClaimedBounty(repo);
+
+        final rm = await witnessBy(me, claimantOf: other, bountyId: bountyId);
+        witnessRecords.add((from: me.peerId, body: rm.encode()));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+
+      test('a witness from the claimant is rejected', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await myClaimedBounty(repo);
+
+        // other is the claimant vouching for themselves.
+        final rm = await witnessBy(
+          other,
+          claimantOf: other,
+          bountyId: bountyId,
+        );
+        witnessRecords.add((from: other.peerId, body: rm.encode()));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+
+      test('the same witness twice is counted once', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await myClaimedBounty(repo);
+
+        final rm = await witnessBy(
+          third,
+          claimantOf: other,
+          bountyId: bountyId,
+        );
+        witnessRecords.add((from: third.peerId, body: rm.encode()));
+        await settle();
+        // The identical record again, then a freshly signed one from the
+        // same phone. Both are the same witness.
+        witnessRecords.add((from: third.peerId, body: rm.encode()));
+        await settle();
+        final again = await WitnessRM.sign(
+          bountyId: bountyId,
+          claimantPeerId: other.peerId,
+          witnessPeerId: third.peerId,
+          signingKeyPair: third.signingKeyPair,
+          signingPublicKey: third.signingPublicKey,
+          noisePublicKey: third.noisePublicKey,
+          at: nowSeconds + 60,
+        );
+        witnessRecords.add((from: third.peerId, body: again.encode()));
+        await settle();
+
+        expect(await repo.getWitnesses().first, hasLength(1));
+      });
+
+      test(
+        'a witness naming a claimant the bounty does not have is rejected',
+        () async {
+          final repo = build();
+          await settle();
+          final bountyId = await myClaimedBounty(repo);
+
+          // Accepted claimant is other; this vouches for third.
+          final rm = await witnessBy(
+            third,
+            claimantOf: third,
+            bountyId: bountyId,
+          );
+          witnessRecords.add((from: third.peerId, body: rm.encode()));
+          await settle();
+
+          expect(await repo.getWitnesses().first, isEmpty);
+        },
+      );
+
+      test('a witness for a bounty we do not hold is rejected', () async {
+        final repo = build();
+        await settle();
+
+        final rm = await witnessBy(third, claimantOf: other);
+        witnessRecords.add((from: third.peerId, body: rm.encode()));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+
+      test('only the poster collects', () async {
+        final repo = build();
+        await settle();
+        // Posted by other, so we are a bystander, not the collector.
+        records.add(
+          (await recordBy(
+            other,
+            status: BountyRM.statusClaimed,
+            claimant: third.peerId,
+          )).encode(),
+        );
+        await settle();
+
+        final rm = await witnessBy(third, claimantOf: third);
+        witnessRecords.add((from: third.peerId, body: rm.encode()));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+
+      test('garbage is ignored', () async {
+        final repo = build();
+        await settle();
+        await myClaimedBounty(repo);
+
+        witnessRecords.add((
+          from: third.peerId,
+          body: Uint8List.fromList(List.filled(20, 7)),
+        ));
+        await settle();
+
+        expect(await repo.getWitnesses().first, isEmpty);
+      });
+    });
+
+    group('asking for them', () {
+      test('marking done as the claimant floods a request', () async {
+        final repo = build();
+        await settle();
+        records.add((await recordBy(other)).encode());
+        await settle();
+        await repo.claim(id);
+        messages.add((
+          from: other.peerId,
+          body: BountyMessageRM(
+            kind: BountyMessageRM.kindAccept,
+            bountyId: id,
+            sentAt: nowSeconds,
+            note: '',
+          ).encode(),
+        ));
+        await settle();
+
+        await repo.markDone(id);
+
+        expect(witnessAsks, [(id, me.peerId)]);
+      });
+
+      test('marking done as the poster floods nothing', () async {
+        final repo = build();
+        await settle();
+        final bountyId = await (() async {
+          final b = await repo.postBounty(
+            title: 'mine',
+            details: '',
+            amountCents: 100,
+            expiresAt: now.add(const Duration(hours: 1)),
+          );
+          messages.add((
+            from: other.peerId,
+            body: BountyMessageRM(
+              kind: BountyMessageRM.kindClaim,
+              bountyId: b.id,
+              sentAt: nowSeconds,
+              note: '',
+            ).encode(),
+          ));
+          await settle();
+          await repo.accept(b.id, other.peerId);
+          return b.id;
+        })();
+
+        await repo.markDone(bountyId);
+
+        expect(witnessAsks, isEmpty);
+      });
+
+      test(
+        'a radio that refuses the request does not undo the completion',
+        () async {
+          final repo = build();
+          await settle();
+          records.add((await recordBy(other)).encode());
+          await settle();
+          await repo.claim(id);
+          messages.add((
+            from: other.peerId,
+            body: BountyMessageRM(
+              kind: BountyMessageRM.kindAccept,
+              bountyId: id,
+              sentAt: nowSeconds,
+              note: '',
+            ).encode(),
+          ));
+          await settle();
+          when(
+            () => link.requestWitnesses(any(), any()),
+          ).thenThrow(StateError('gatt'));
+
+          await repo.markDone(id);
+
+          expect(
+            (await repo.getClaims().first).single.status,
+            ClaimStatus.done,
+          );
+        },
+      );
+
+      test('asking again is refused for a bounty we did not claim', () async {
+        final repo = build();
+        await settle();
+        records.add((await recordBy(other)).encode());
+        await settle();
+
+        expect(
+          repo.requestWitnesses(id),
+          throwsA(isA<NotBountyClaimantException>()),
+        );
+      });
+    });
+
+    test('witnesses come back newest first', () async {
+      final repo = build();
+      await settle();
+      final bounty = await repo.postBounty(
+        title: 'mine',
+        details: '',
+        amountCents: 100,
+        expiresAt: now.add(const Duration(hours: 1)),
+      );
+      messages.add((
+        from: other.peerId,
+        body: BountyMessageRM(
+          kind: BountyMessageRM.kindClaim,
+          bountyId: bounty.id,
+          sentAt: nowSeconds,
+          note: '',
+        ).encode(),
+      ));
+      await settle();
+      await repo.accept(bounty.id, other.peerId);
+      await settle();
+
+      final older = await WitnessRM.sign(
+        bountyId: bounty.id,
+        claimantPeerId: other.peerId,
+        witnessPeerId: third.peerId,
+        signingKeyPair: third.signingKeyPair,
+        signingPublicKey: third.signingPublicKey,
+        noisePublicKey: third.noisePublicKey,
+        at: nowSeconds - 600,
+      );
+      witnessRecords.add((from: third.peerId, body: older.encode()));
+      await settle();
+
+      final list = await repo.getWitnesses().first;
+      expect(
+        list.single.at,
+        DateTime.fromMillisecondsSinceEpoch(
+          (nowSeconds - 600) * 1000,
+          isUtc: true,
+        ),
+      );
+    });
   });
 
   test('dispose completes when the identity never loaded', () async {

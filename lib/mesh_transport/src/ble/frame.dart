@@ -33,6 +33,13 @@ class Frame {
   /// to the frame layer; BountyRM knows what is inside.
   static const typeBounty = 7;
 
+  /// A request for witnesses to a completion. Unsealed and flooded, because
+  /// it is addressed to whoever happens to be in the room.
+  ///
+  /// Only ever honoured when it arrived over the radio. See
+  /// [WitnessRequest.parse].
+  static const typeWitness = 8;
+
   /// Hop budget a fresh message starts with. A receiver turns the ttl it
   /// sees back into a hop count: hops = defaultTtl - ttl.
   static const defaultTtl = 3;
@@ -61,6 +68,9 @@ class Frame {
 
   /// Just a peer id.
   static const announceLength = 8;
+
+  /// A witness request: record version, bounty id, claimant peer id.
+  static const witnessRequestLength = 1 + 8 + 8;
 
   /// Addressing plus the 8 byte transport counter.
   static const sealedHeaderLength = addressLength + 8;
@@ -121,6 +131,8 @@ class Frame {
 
   bool get isBounty => innerVer == innerVersion && type == typeBounty;
 
+  bool get isWitness => innerVer == innerVersion && type == typeWitness;
+
   /// The inner payload after version and type: whatever the type carries.
   Uint8List get body => payload.sublist(2);
 
@@ -139,6 +151,35 @@ class Frame {
   /// oversized frame; a record is several times the mesh MTU.
   factory Frame.bounty(Uint8List record, {int ttl = defaultTtl}) =>
       _buildBytes(typeBounty, record, ttl);
+
+  /// Asks anyone in range to co-sign that they heard [claimantPeerId] finish
+  /// [bountyId].
+  ///
+  /// Carries no signature of its own and does not need one. Nothing here is
+  /// worth forging: a request only ever makes a witness out of a phone that
+  /// already holds the bounty record, and the witness signs its own name, not
+  /// the requester's.
+  factory Frame.witnessRequest({
+    required String bountyId,
+    required String claimantPeerId,
+    int ttl = defaultTtl,
+  }) {
+    final payload = Uint8List(2 + witnessRequestLength);
+    payload[0] = innerVersion;
+    payload[1] = typeWitness;
+    payload[2] = witnessRequestVersion;
+    _writeId(payload, 3, bountyId);
+    _writeId(payload, 11, claimantPeerId);
+    return Frame(
+      envelopeVer: envelopeVersion,
+      ttl: ttl,
+      msgId: _newMsgId(),
+      payload: payload,
+    );
+  }
+
+  /// Record version inside a witness request payload.
+  static const witnessRequestVersion = 1;
 
   /// Says "this peer id exists and is alive", to the whole mesh.
   ///
@@ -402,6 +443,42 @@ class Announce {
     final p = frame.payload;
     if (p.length < 2 + Frame.announceLength) return null;
     return Announce(Frame._readId(p, 2));
+  }
+}
+
+/// A request to witness a completion, once it has been checked.
+///
+/// The one rule that makes witnessing mean anything lives here: [parse]
+/// returns null for anything that came in over the internet.
+///
+/// A witness signature says "this phone was physically near the phone that
+/// said it finished". Radio range is the only thing that makes that true.
+/// Traffic off a Nostr relay can come from anywhere on earth, so a witness
+/// created from a relayed request would attest to nothing at all, and the
+/// feature would be decoration.
+///
+/// The gate is a pure function rather than a branch inside MeshLink so it can
+/// be tested directly, which matters more for this rule than for any other in
+/// the transport.
+class WitnessRequest {
+  const WitnessRequest({required this.bountyId, required this.claimantPeerId});
+
+  final String bountyId;
+  final String claimantPeerId;
+
+  String get claimantLabel => _labelOf(claimantPeerId);
+
+  /// [fromInternet] is the pipe the frame arrived on, as MeshLink knows it.
+  static WitnessRequest? parse(Frame frame, {required bool fromInternet}) {
+    if (fromInternet) return null;
+    if (!frame.isWitness) return null;
+    final p = frame.payload;
+    if (p.length < 2 + Frame.witnessRequestLength) return null;
+    if (p[2] != Frame.witnessRequestVersion) return null;
+    return WitnessRequest(
+      bountyId: Frame._readId(p, 3),
+      claimantPeerId: Frame._readId(p, 11),
+    );
   }
 }
 
