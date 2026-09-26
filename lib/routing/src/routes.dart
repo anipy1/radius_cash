@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:radius/demo/demo_mode.dart';
 import 'package:go_router/go_router.dart';
 import 'package:radius/features/bounty_create/bounty_create.dart';
 import 'package:radius/features/bounty_detail/bounty_detail.dart';
@@ -40,6 +41,12 @@ GoRouter buildRouter({
   // that the welcome path is never shown again. The repository remembers
   // the answer, so this is one disk read per app start.
   redirect: (context, state) async {
+    // Validation session: start straight on the feed, no welcome screens.
+    if (demoMode) {
+      return state.matchedLocation == RoutePaths.onboarding
+          ? RoutePaths.home
+          : null;
+    }
     final onboarded = await identityRepository.hasOnboarded();
     final atWelcome = state.matchedLocation == RoutePaths.onboarding;
     if (!onboarded && !atWelcome) return RoutePaths.onboarding;

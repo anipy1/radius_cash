@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:radius/demo/demo_mode.dart';
 import 'package:radius/component_library/component_library.dart';
 import 'package:radius/domain_models/domain_models.dart';
 import 'package:radius/l10n/l10n.dart';
@@ -74,17 +75,21 @@ class BountyFeedView extends StatelessWidget {
           appBar: ContraAppBar(
             title: l10n.bountyFeedAppBarTitle,
             actions: [
-              ContraIconButton(
-                icon: Icons.people_outline,
-                semanticLabel: l10n.bountyFeedPeersButtonLabel,
-                onPressed: onPeersTapped,
-              ),
-              const SizedBox(width: Spacing.small),
-              ContraIconButton(
-                icon: Icons.settings_outlined,
-                semanticLabel: l10n.bountyFeedSettingsButtonLabel,
-                onPressed: onSettingsTapped,
-              ),
+              // Hidden during the validation session so the conversation
+              // stays on the core loop. See lib/demo/demo_mode.dart.
+              if (!demoMode) ...[
+                ContraIconButton(
+                  icon: Icons.people_outline,
+                  semanticLabel: l10n.bountyFeedPeersButtonLabel,
+                  onPressed: onPeersTapped,
+                ),
+                const SizedBox(width: Spacing.small),
+                ContraIconButton(
+                  icon: Icons.settings_outlined,
+                  semanticLabel: l10n.bountyFeedSettingsButtonLabel,
+                  onPressed: onSettingsTapped,
+                ),
+              ],
             ],
           ),
           body: Column(
