@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'debug/debug.dart';
+import 'component_library/component_library.dart';
+import 'domain_models/domain_models.dart';
 import 'keep_alive/keep_alive.dart';
 import 'l10n/l10n.dart';
 import 'local_storage/local_storage.dart';
@@ -15,6 +16,7 @@ import 'repositories/identity_repository/identity_repository.dart';
 import 'repositories/location_repository/location_repository.dart';
 import 'repositories/mesh_repository/mesh_repository.dart';
 import 'repositories/settings_repository/settings_repository.dart';
+import 'routing/routing.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +66,9 @@ class _RadiusAppState extends State<RadiusApp> {
     Uri.parse('wss://nostr.mom'),
     Uri.parse('wss://offchain.pub'),
   ];
+
+  final _lightTheme = LightAppThemeData();
+  final _darkTheme = DarkAppThemeData();
 
   final _seedVault = const SecureSeedVault();
 
@@ -149,13 +154,20 @@ class _RadiusAppState extends State<RadiusApp> {
     strings: _strings,
     isInForeground: () => _inForeground,
     formatAmount: _formatAmount,
-    // No routing yet. The harness is one screen, so a tapped notification
-    // has nowhere to go but the screen already on top.
-    routeFor: (id) => '/bounty/$id',
+    routeFor: (id) => RoutePaths.bountyDetail(id: id),
   );
 
   bool _inForeground = true;
   StreamSubscription<String>? _opened;
+
+  late final _router = buildRouter(
+    identityRepository: _identityRepository,
+    meshRepository: _meshRepository,
+    bountyRepository: _bountyRepository,
+    locationRepository: _locationRepository,
+    settingsRepository: _settingsRepository,
+    onIdentityForgotten: widget.onIdentityForgotten,
+  );
 
   /// Coming back to the foreground is the one lifecycle moment worth
   /// reacting to. Leaving needs nothing: the platform side keeps the radio up.
@@ -180,10 +192,9 @@ class _RadiusAppState extends State<RadiusApp> {
       return;
     }
     _bountyNotifier.start();
-    // Nowhere to navigate to until routing lands. Draining the stream keeps
-    // the notifier's sink from backing up.
-    _opened = _localNotifier.opened.listen((_) {});
-    await _localNotifier.launchRoute();
+    _opened = _localNotifier.opened.listen(_router.push);
+    final launched = await _localNotifier.launchRoute();
+    if (launched != null) unawaited(_router.push(launched));
   }
 
   void _onResumed() {
@@ -205,18 +216,26 @@ class _RadiusAppState extends State<RadiusApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Radius debug',
-    debugShowCheckedModeBanner: false,
-    home: DebugHarnessScreen(
-      identityRepository: _identityRepository,
-      meshRepository: _meshRepository,
-      bountyRepository: _bountyRepository,
-      locationRepository: _locationRepository,
-      link: _link,
-      onIdentityForgotten: widget.onIdentityForgotten,
+  Widget build(BuildContext context) => AppTheme(
+    lightTheme: _lightTheme,
+    darkTheme: _darkTheme,
+    child: StreamBuilder<DarkModePreference>(
+      stream: _settingsRepository.getDarkModePreference(),
+      builder: (context, snapshot) => MaterialApp.router(
+        theme: _lightTheme.materialThemeData,
+        darkTheme: _darkTheme.materialThemeData,
+        // The Contra kit is drawn for light, so light until the user says
+        // otherwise on the settings screen.
+        themeMode: switch (snapshot.data) {
+          DarkModePreference.alwaysDark => ThemeMode.dark,
+          DarkModePreference.useSystemSettings => ThemeMode.system,
+          DarkModePreference.alwaysLight || null => ThemeMode.light,
+        },
+        routerConfig: _router,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+      ),
     ),
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
   );
 }
