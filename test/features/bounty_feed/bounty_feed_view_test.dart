@@ -197,4 +197,61 @@ void main() {
     await tester.pumpWidget(host());
     expect(find.text('yours'), findsOneWidget);
   });
+
+  group('the witness badge', () {
+    // A finished bounty only appears under 'mine' or 'claimed': the nearby
+    // segment is open bounties from other people, so a done one is never
+    // there. This is the author looking at their own.
+    Bounty done({List<String> witnessLabels = const []}) => Bounty(
+      id: 'b9',
+      authorId: 'me',
+      authorLabel: 'K7QA',
+      isMine: true,
+      title: 'Carry a booth to hall B',
+      details: '',
+      amountCents: 2500,
+      createdAt: DateTime.now().subtract(const Duration(hours: 1)),
+      expiresAt: DateTime.now().add(const Duration(hours: 3)),
+      updatedAt: DateTime.now(),
+      status: BountyStatus.done,
+      claimantId: 'zz',
+      claimantLabel: 'ZZ9P',
+      witnessLabels: witnessLabels,
+    );
+
+    Future<void> show(WidgetTester tester, Bounty bounty) async {
+      whenListen(
+        bloc,
+        const Stream<BountyFeedState>.empty(),
+        initialState: BountyFeedState(
+          startStatus: MeshStartStatus.started,
+          segment: BountyFeedSegment.mine,
+          bounties: [bounty],
+        ),
+      );
+      await tester.pumpWidget(host());
+    }
+
+    testWidgets('When witnesses signed, the card counts them', (tester) async {
+      await show(tester, done(witnessLabels: const ['ZZ9P', 'M4TB', 'K7QA']));
+
+      expect(find.text('3 witnesses'), findsOneWidget);
+      // Next to the status badge, not instead of it.
+      expect(find.text('done'), findsOneWidget);
+    });
+
+    testWidgets('When one signed, the badge is singular', (tester) async {
+      await show(tester, done(witnessLabels: const ['ZZ9P']));
+      expect(find.text('1 witness'), findsOneWidget);
+    });
+
+    testWidgets('When nobody signed, there is no badge', (tester) async {
+      await show(tester, done());
+
+      // "0 witnesses" on a card would be noise; the detail screen is where
+      // the absence is spelled out.
+      expect(find.textContaining('witness'), findsNothing);
+      expect(find.text('done'), findsOneWidget);
+    });
+  });
 }

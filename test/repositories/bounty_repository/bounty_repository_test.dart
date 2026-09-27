@@ -1663,6 +1663,73 @@ void main() {
       });
     });
 
+    test('a bounty carries the labels of whoever signed it', () async {
+      final repo = build();
+      await settle();
+      final bounty = await repo.postBounty(
+        title: 'mine',
+        details: '',
+        amountCents: 100,
+        expiresAt: now.add(const Duration(hours: 1)),
+      );
+      messages.add((
+        from: other.peerId,
+        body: BountyMessageRM(
+          kind: BountyMessageRM.kindClaim,
+          bountyId: bounty.id,
+          sentAt: nowSeconds,
+          note: '',
+        ).encode(),
+      ));
+      await settle();
+      await repo.accept(bounty.id, other.peerId);
+      await settle();
+
+      // Nothing signed yet.
+      expect((await repo.getBounties().first).single.witnessCount, 0);
+      expect((await repo.getBounties().first).single.isWitnessed, isFalse);
+
+      final rm = await witnessBy(third, claimantOf: other, bountyId: bounty.id);
+      witnessRecords.add((from: third.peerId, body: rm.encode()));
+      await settle();
+
+      final b = (await repo.getBounties().first).single;
+      expect(b.witnessCount, 1);
+      expect(b.isWitnessed, isTrue);
+      expect(b.witnessLabels, [MeshLink.labelOf(third.peerId)]);
+    });
+
+    test('a rejected witness never reaches the bounty', () async {
+      final repo = build();
+      await settle();
+      final bounty = await repo.postBounty(
+        title: 'mine',
+        details: '',
+        amountCents: 100,
+        expiresAt: now.add(const Duration(hours: 1)),
+      );
+      messages.add((
+        from: other.peerId,
+        body: BountyMessageRM(
+          kind: BountyMessageRM.kindClaim,
+          bountyId: bounty.id,
+          sentAt: nowSeconds,
+          note: '',
+        ).encode(),
+      ));
+      await settle();
+      await repo.accept(bounty.id, other.peerId);
+      await settle();
+
+      // The claimant vouching for themselves: refused, so the count the UI
+      // shows stays honest.
+      final rm = await witnessBy(other, claimantOf: other, bountyId: bounty.id);
+      witnessRecords.add((from: other.peerId, body: rm.encode()));
+      await settle();
+
+      expect((await repo.getBounties().first).single.witnessCount, 0);
+    });
+
     test('witnesses come back newest first', () async {
       final repo = build();
       await settle();

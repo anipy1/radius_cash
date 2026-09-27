@@ -224,5 +224,10 @@
   "settingsForgetKeepButtonLabel": "Keep it",
   "settingsForgottenTitle": "Identity forgotten",
   "settingsForgottenBody": "Starting over as a new phone.",
-  "bountyFeedSettingsButtonLabel": "Settings"
+  "bountyFeedSettingsButtonLabel": "Settings",
+  "bountyFeedWitnesses": "{count, plural, =1{1 witness} other{{count} witnesses}}",
+  "@bountyFeedWitnesses": { "placeholders": { "count": { "type": "int" } } },
+  "bountyDetailWitnessesTitle": "{count, plural, =0{Witnesses} =1{1 phone in the room signed that this happened} other{{count} phones in the room signed that this happened}}",
+  "@bountyDetailWitnessesTitle": { "placeholders": { "count": { "type": "int" } } },
+  "bountyDetailNoWitnesses": "No witnesses. Nobody else was in radio range when this was finished, so it rests on the word of the two of you."
 }

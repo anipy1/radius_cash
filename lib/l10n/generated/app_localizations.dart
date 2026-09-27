@@ -1233,6 +1233,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Settings'**
   String get bountyFeedSettingsButtonLabel;
+
+  /// No description provided for @bountyFeedWitnesses.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 witness} other{{count} witnesses}}'**
+  String bountyFeedWitnesses(int count);
+
+  /// No description provided for @bountyDetailWitnessesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Witnesses} =1{1 phone in the room signed that this happened} other{{count} phones in the room signed that this happened}}'**
+  String bountyDetailWitnessesTitle(int count);
+
+  /// No description provided for @bountyDetailNoWitnesses.
+  ///
+  /// In en, this message translates to:
+  /// **'No witnesses. Nobody else was in radio range when this was finished, so it rests on the word of the two of you.'**
+  String get bountyDetailNoWitnesses;
 }
 
 class _AppLocalizationsDelegate

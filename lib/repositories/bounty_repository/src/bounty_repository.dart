@@ -310,11 +310,26 @@ class BountyRepository {
       for (final c in claims)
         if (c.claimantPeerId == me) c.bountyId,
     };
+    final witnesses = [
+      for (final cm in await _storage.getWitnesses())
+        cm.toDomainModel(myPeerId: me),
+    ];
+    witnesses.sort((a, b) => b.at.compareTo(a.at));
+    // Labels per bounty, in the same newest-first order, so a screen can show
+    // who vouched without holding the records.
+    final labelsFor = <String, List<String>>{};
+    for (final w in witnesses) {
+      (labelsFor[w.bountyId] ??= []).add(w.witnessLabel);
+    }
+
     final bounties = <Bounty>[];
     for (final cm in await _storage.getBounties()) {
       final Bounty bounty;
       try {
-        bounty = cm.toDomainModel(myPeerId: me);
+        bounty = cm.toDomainModel(
+          myPeerId: me,
+          witnessLabels: labelsFor[cm.id] ?? const [],
+        );
       } on FormatException {
         continue; // a status this build does not know
       }
@@ -336,11 +351,6 @@ class BountyRepository {
       }
     }
     domainClaims.sort((a, b) => b.sentAt.compareTo(a.sentAt));
-    final witnesses = [
-      for (final cm in await _storage.getWitnesses())
-        cm.toDomainModel(myPeerId: me),
-    ];
-    witnesses.sort((a, b) => b.at.compareTo(a.at));
     if (_bounties.isClosed) return;
     _bounties.add(bounties);
     _claims.add(domainClaims);

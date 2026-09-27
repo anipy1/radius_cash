@@ -105,6 +105,11 @@ class _BountyDetailViewState extends State<BountyDetailView> {
                 _AuthorSection(state: state)
               else
                 _ClaimantSection(state: state, note: _note),
+              if (state.bounty.status == BountyStatus.done ||
+                  state.bounty.status == BountyStatus.paid) ...[
+                const SizedBox(height: Spacing.large),
+                _WitnessSection(bounty: state.bounty),
+              ],
             ],
           ),
         },
@@ -431,3 +436,43 @@ String statusLabel(AppLocalizations l10n, BountyStatus status) =>
       BountyStatus.paid => l10n.bountyDetailStatusPaid,
       BountyStatus.cancelled => l10n.bountyDetailStatusCancelled,
     };
+
+/// Who was in the room when this was finished.
+///
+/// Only shown once a bounty is done, because that is the moment the
+/// signatures are about. An empty list is shown rather than hidden: "nobody
+/// signed" is a fact about the completion, not a missing section.
+class _WitnessSection extends StatelessWidget {
+  const _WitnessSection({required this.bounty});
+
+  final Bounty bounty;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = AppTheme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.bountyDetailWitnessesTitle(bounty.witnessCount),
+          style: theme.subtitleTextStyle,
+        ),
+        const SizedBox(height: Spacing.medium),
+        if (bounty.witnessLabels.isEmpty)
+          Text(
+            l10n.bountyDetailNoWitnesses,
+            style: theme.bodyTextStyle.copyWith(color: theme.mutedColor),
+          ),
+        for (final label in bounty.witnessLabels) ...[
+          ContraListTile(
+            leading: ContraAvatar(label: label),
+            title: label,
+          ),
+          const SizedBox(height: Spacing.small),
+        ],
+      ],
+    );
+  }
+}

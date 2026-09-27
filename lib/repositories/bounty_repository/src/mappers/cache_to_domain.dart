@@ -29,7 +29,14 @@ extension ClaimStatusCodeToDomain on int {
 }
 
 extension BountyCMToDomain on BountyCM {
-  Bounty toDomainModel({required String myPeerId}) => Bounty(
+  /// [witnessLabels] comes from the separately stored witness records, which
+  /// the cached bounty knows nothing about: a witness is its own signed
+  /// record on purpose, so the repository joins the two rather than the
+  /// bounty carrying them.
+  Bounty toDomainModel({
+    required String myPeerId,
+    List<String> witnessLabels = const [],
+  }) => Bounty(
     id: id,
     authorId: authorPeerId,
     authorLabel: MeshLink.labelOf(authorPeerId),
@@ -47,6 +54,7 @@ extension BountyCMToDomain on BountyCM {
         : MeshLink.labelOf(claimantPeerId!),
     geohash: Geohash.isValid(geohash) ? Geohash(geohash) : null,
     viaInternet: viaInternet,
+    witnessLabels: witnessLabels,
   );
 }
 

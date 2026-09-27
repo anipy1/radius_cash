@@ -97,6 +97,16 @@ class BountyCard extends StatelessWidget {
                   filled: true,
                 ),
               ],
+              // Only once it is finished, and only when somebody signed.
+              // A done bounty with no witnesses says so on the detail
+              // screen; a badge reading "0 witnesses" would be noise.
+              if (bounty.isWitnessed) ...[
+                const SizedBox(width: Spacing.small),
+                ContraBadge(
+                  label: l10n.bountyFeedWitnesses(bounty.witnessCount),
+                  tone: Tone.success,
+                ),
+              ],
               const SizedBox(width: Spacing.small),
               Text(
                 _timeLeft(l10n, bounty.expiresAt.difference(now)),

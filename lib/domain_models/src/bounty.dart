@@ -37,6 +37,7 @@ class Bounty extends Equatable {
     required this.claimantLabel,
     this.geohash,
     this.viaInternet = false,
+    this.witnessLabels = const [],
   });
 
   final String id;
@@ -67,6 +68,20 @@ class Bounty extends Equatable {
   /// Arrived over the internet and has never been heard on the radio, so
   /// the poster may be further away than a walk.
   final bool viaInternet;
+
+  /// The short labels of the phones that were in radio range when this was
+  /// finished and signed to say so, newest first.
+  ///
+  /// Labels rather than the records themselves: a screen shows who vouched,
+  /// and the signatures that make that true are checked in the repository
+  /// before a witness ever reaches here.
+  final List<String> witnessLabels;
+
+  /// How many phones vouched for the completion.
+  int get witnessCount => witnessLabels.length;
+
+  /// Finished, with somebody other than the two parties saying so.
+  bool get isWitnessed => witnessLabels.isNotEmpty;
 
   /// How long a poster may go without renewing an open bounty before it
   /// is shown as theirs but not vouched for. A poster republishes every two
@@ -120,5 +135,6 @@ class Bounty extends Equatable {
     claimantLabel,
     geohash,
     viaInternet,
+    witnessLabels,
   ];
 }

@@ -706,4 +706,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bountyFeedSettingsButtonLabel => 'Settings';
+
+  @override
+  String bountyFeedWitnesses(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count witnesses',
+      one: '1 witness',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String bountyDetailWitnessesTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count phones in the room signed that this happened',
+      one: '1 phone in the room signed that this happened',
+      zero: 'Witnesses',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get bountyDetailNoWitnesses =>
+      'No witnesses. Nobody else was in radio range when this was finished, so it rests on the word of the two of you.';
 }

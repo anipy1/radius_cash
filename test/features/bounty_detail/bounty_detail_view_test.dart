@@ -41,6 +41,7 @@ void main() {
     bool isMine = false,
     BountyStatus status = BountyStatus.open,
     DateTime? updatedAt,
+    List<String> witnessLabels = const [],
   }) => Bounty(
     id: 'b',
     authorId: isMine ? 'me' : 'them',
@@ -55,6 +56,7 @@ void main() {
     status: status,
     claimantId: null,
     claimantLabel: null,
+    witnessLabels: witnessLabels,
   );
 
   Claim claim({
@@ -222,5 +224,75 @@ void main() {
       findsOneWidget,
     );
     verify(() => bloc.add(const BountyDetailErrorShown())).called(1);
+  });
+
+  group('witnesses', () {
+    testWidgets('When done with witnesses, names who signed', (tester) async {
+      seed(
+        BountyDetailSuccess(
+          bounty: bounty(
+            status: BountyStatus.done,
+            witnessLabels: const ['ZZ9P', 'K7QA', 'M4TB'],
+          ),
+          claims: const [],
+        ),
+      );
+      await tester.pumpWidget(host());
+
+      expect(
+        find.text('3 phones in the room signed that this happened'),
+        findsOneWidget,
+      );
+      // Each label listed, the same way claims are.
+      expect(find.text('ZZ9P'), findsWidgets);
+      expect(find.text('K7QA'), findsWidgets);
+      expect(find.text('M4TB'), findsWidgets);
+    });
+
+    testWidgets('When exactly one signed, says so in the singular', (
+      tester,
+    ) async {
+      seed(
+        BountyDetailSuccess(
+          bounty: bounty(
+            status: BountyStatus.done,
+            witnessLabels: const ['ZZ9P'],
+          ),
+          claims: const [],
+        ),
+      );
+      await tester.pumpWidget(host());
+
+      expect(
+        find.text('1 phone in the room signed that this happened'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('When done with nobody in the room, says that plainly', (
+      tester,
+    ) async {
+      seed(
+        BountyDetailSuccess(
+          bounty: bounty(status: BountyStatus.done),
+          claims: const [],
+        ),
+      );
+      await tester.pumpWidget(host());
+
+      // Shown, not hidden: no witnesses is information about the completion.
+      expect(find.text('Witnesses'), findsOneWidget);
+      expect(find.textContaining('No witnesses.'), findsOneWidget);
+    });
+
+    testWidgets('While it is still open, no witness section at all', (
+      tester,
+    ) async {
+      seed(BountyDetailSuccess(bounty: bounty(), claims: const []));
+      await tester.pumpWidget(host());
+
+      expect(find.text('Witnesses'), findsNothing);
+      expect(find.textContaining('signed that this happened'), findsNothing);
+    });
   });
 }
