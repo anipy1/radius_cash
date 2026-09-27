@@ -9,4 +9,4 @@
 /// and the whole app returns.
 library;
 
-const demoMode = true;
+const demoMode = false;
