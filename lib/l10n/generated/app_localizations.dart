@@ -235,19 +235,19 @@ abstract class AppLocalizations {
   /// No description provided for @bountyFeedMeshStopped.
   ///
   /// In en, this message translates to:
-  /// **'Mesh off'**
+  /// **'Radio off'**
   String get bountyFeedMeshStopped;
 
   /// No description provided for @bountyFeedMeshWaiting.
   ///
   /// In en, this message translates to:
-  /// **'Turn Bluetooth on'**
+  /// **'Bluetooth off'**
   String get bountyFeedMeshWaiting;
 
   /// No description provided for @bountyFeedMeshUnauthorized.
   ///
   /// In en, this message translates to:
-  /// **'Bluetooth permission needed'**
+  /// **'No Bluetooth permission'**
   String get bountyFeedMeshUnauthorized;
 
   /// No description provided for @bountyFeedMeshUnsupported.

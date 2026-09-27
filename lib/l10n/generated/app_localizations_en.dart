@@ -84,13 +84,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get bountyFeedMeshStopped => 'Mesh off';
+  String get bountyFeedMeshStopped => 'Radio off';
 
   @override
-  String get bountyFeedMeshWaiting => 'Turn Bluetooth on';
+  String get bountyFeedMeshWaiting => 'Bluetooth off';
 
   @override
-  String get bountyFeedMeshUnauthorized => 'Bluetooth permission needed';
+  String get bountyFeedMeshUnauthorized => 'No Bluetooth permission';
 
   @override
   String get bountyFeedMeshUnsupported => 'No Bluetooth LE';
