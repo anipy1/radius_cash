@@ -50,3 +50,9 @@ app.*.map.json
 # Local Claude Code commands. They hardcode absolute paths to my own machine,
 # so they are useless in a clone. The kit's agents and skills stay tracked.
 .claude/commands/
+
+# Zapstore signing key (SIGN_WITH). Never commit this.
+.env
+
+# Staged publishing artifacts
+/dist/

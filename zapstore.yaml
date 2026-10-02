@@ -1,0 +1,72 @@
+name: Radius
+summary: Post a small job nearby, or earn the cash doing one. Over Bluetooth, no server.
+description: |
+  Radius is for small paid jobs near you.
+
+  You post a job with an amount on it. Phones around you pick it up over
+  Bluetooth and pass it along to phones further out. Someone nearby claims it,
+  does it, and gets paid.
+
+  There is no server and no account. Nothing is uploaded anywhere, which means
+  it works with no internet at all, and the people who see your job are the
+  people close enough to actually do it.
+
+  HOW IT WORKS
+
+  Every phone makes its own identity on first launch, held in the Keychain or
+  Keystore. People know each other by a short label derived from it. There is
+  nothing to sign up for.
+
+  A bounty is one signed record. It floods over Bluetooth LE, gets relayed by
+  the phones in between, and is republished on a slow cadence so the board
+  converges. Anyone can forward it. Only the key that signed the first record
+  for that id can revise it.
+
+  Claims are private. They travel inside an encrypted Noise session between the
+  claimant and the poster.
+
+  When there is internet, public Nostr relays carry the same encrypted frames
+  as a fallback, so two phones that met over the radio can still reach each
+  other later. Bluetooth is always tried first.
+
+  WITNESSED COMPLETION
+
+  When a claimant marks a job done, the phones physically in radio range
+  co-sign that they heard it.
+
+  A witness signature is only ever produced for something heard over the radio,
+  never for something that arrived through a relay. Relay traffic can come from
+  anywhere on earth. Radio traffic cannot. So a finished job carries signatures
+  from devices that were actually there.
+
+  PRIVACY
+
+  No analytics, no crash reporting, no advertising identifiers, no tracking.
+  There is no backend to send anything to. The Bluetooth permission is declared
+  neverForLocation, because the radio is used to find other phones running
+  Radius and for nothing else.
+website: https://radius.cash
+repository: https://github.com/anipy1/radius_cash
+license: MIT
+tags:
+  - bounties
+  - bluetooth
+  - mesh
+  - offline
+  - nostr
+  - p2p
+
+# Local assets. Radius is not on the Play Store, so there is no external
+# metadata source to pull screenshots from: every image below ships from this
+# repository. Config values always take priority over fetched metadata.
+icon: assets/icon/icon.png
+images:
+  - ./screenshots/01-premise.jpg
+  - ./screenshots/02-feed.jpg
+  - ./screenshots/03-post.jpg
+  - ./screenshots/04-claimed.jpg
+  - ./screenshots/05-done.jpg
+  - ./screenshots/06-mesh.jpg
+
+release_notes: ./release_notes_zapstore.md
+release_source: ./build/app/outputs/flutter-apk/app-release.apk
